@@ -7,7 +7,7 @@ import {
 } from "@/lib/config";
 import { ICONS, Mark } from "./Icons";
 
-const KEY = "bizzone-onboarding-draft-v3";
+const KEY = "bizzone-onboarding-draft-v4";
 
 export type FormData = {
   plan: string; bizName: string; contact: string; email: string; phone: string; website: string;
@@ -33,14 +33,12 @@ const EMPTY: FormData = {
 
 const STEPS: [string, string, string, string, string][] = [
   // sidebar title, sidebar sub, heading, lede, time
-  ["Your plan", "Confirm what you bought", "Confirm your plan", "Pick the plan you bought.", "10 seconds"],
-  ["Your business", "The basics", "About your business", "So we know who you are.", "1 minute"],
-  ["Pages", "Pages and features", "What pages do you need?", "We picked the main pages for your type of business. Change anything you like.", "1 minute"],
-  ["Your words", "Content and details", "Your words", "Short notes are fine. We’ll write it nicely for you.", "2 minutes"],
-  ["Domain", "Your web address", "Your website address", "Your website’s address, like yourbusiness.com. Connecting it is included.", "30 seconds"],
-  ["Brand", "Look and feel", "Brand and design", "Pick how your website should look.", "30 seconds"],
-  ["Review", "Check and send", "Review and send", "Check your answers. Tap Edit to change anything.", "30 seconds"],
+  ["Your business", "Plan and basics", "About your business", "Just the basics, so we know who you are.", "1 minute"],
+  ["Pages", "Already picked for you", "Your pages", "We picked the right pages for your business. Change anything you like, or just continue.", "15 seconds"],
+  ["Your words", "Short notes are fine", "Tell us about it", "Short notes are fine. We’ll write it nicely for you. Not sure? Skip it, we’ll ask you on WhatsApp.", "2 minutes"],
+  ["Domain and look", "Then send", "Domain and look", "Last step. Then tap Send and you’re done.", "1 minute"],
 ];
+const TOTAL = STEPS.length;
 
 const rank = (k: string) => PLAN_ORDER.indexOf(k as PlanKey);
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -66,6 +64,8 @@ export default function LeadForm() {
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState<null | { name: string; biz: string; steps: [string, string][] }>(null);
   const [loaded, setLoaded] = useState(false);
+  const [linkPlan, setLinkPlan] = useState("");
+  const [showPlans, setShowPlans] = useState(false);
   const headRef = useRef<HTMLHeadingElement>(null);
 
   // Restore draft from this device.
@@ -75,16 +75,66 @@ export default function LeadForm() {
       if (raw) {
         const s = JSON.parse(raw);
         if (s.d) setD({ ...EMPTY, ...s.d, details: s.d.details || {} });
-        if (s.step) setStep(s.step);
-        if (s.maxStep) setMaxStep(s.maxStep);
+        if (s.step) setStep(Math.min(s.step, TOTAL));
+        if (s.maxStep) setMaxStep(Math.min(s.maxStep, TOTAL));
       }
     } catch {}
+    // Plan can come from the link we send the client: /?plan=premium
+    const lp = new URLSearchParams(window.location.search).get("plan")?.toLowerCase() || "";
+    if (lp in PLANS) {
+      setLinkPlan(lp);
+      setD((p) => (p.plan ? p : { ...p, plan: lp }));
+    }
     setLoaded(true);
   }, []);
   useEffect(() => {
     if (!loaded || done) return;
     try { localStorage.setItem(KEY, JSON.stringify({ d, step, maxStep })); } catch {}
   }, [d, step, maxStep, loaded, done]);
+
+  // Mobile: while the keyboard is open, hide the sticky action bar and un-stick the top bar
+  // so the field being typed in stays visible. Restored as soon as the keyboard closes.
+  useEffect(() => {
+    const root = document.documentElement;
+    const isTyping = (el: Element | null) =>
+      !!el && (el.matches("textarea, select") || (el.matches("input") && !el.matches("[type=radio],[type=checkbox],[type=button],[type=submit]")));
+    const small = () => window.matchMedia("(max-width: 980px)").matches;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const vv = window.visualViewport;
+        const kbByViewport = !!vv && vv.height < window.innerHeight * 0.8;
+        root.classList.toggle("kb-open", small() && (isTyping(document.activeElement) || kbByViewport));
+      }, 60);
+    };
+    const onFocus = (e: FocusEvent) => {
+      update();
+      const el = e.target as HTMLElement;
+      if (small() && isTyping(el)) setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+    };
+    document.addEventListener("focusin", onFocus);
+    document.addEventListener("focusout", update);
+    window.visualViewport?.addEventListener("resize", update);
+    return () => {
+      document.removeEventListener("focusin", onFocus);
+      document.removeEventListener("focusout", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      root.classList.remove("kb-open");
+    };
+  }, []);
+
+  // Enter in a one-line field moves to the next field instead of submitting the step.
+  function onFormKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    const el = e.target as HTMLElement;
+    if (e.key !== "Enter" || !el.matches("input") || el.matches("[type=radio],[type=checkbox]")) return;
+    if (el.closest(".addpage")) return; // "Add page" box handles its own Enter
+    e.preventDefault();
+    const fields = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("input:not([type=radio]):not([type=checkbox]):not([disabled]), textarea, select"));
+    const next = fields[fields.indexOf(el) + 1];
+    if (next) next.focus();
+    else (el as HTMLInputElement).blur();
+  }
 
   const set = <K extends keyof FormData>(k: K, v: FormData[K]) => {
     setD((p) => ({ ...p, [k]: v }));
@@ -128,43 +178,26 @@ export default function LeadForm() {
     setNewPage("");
   }
 
+  // Only the essentials are required. Everything else is optional; the PM follows up on WhatsApp.
   function validate(s: number): Errors {
     const e: Errors = {};
     const req = (k: keyof FormData, msg: string) => { if (!String(d[k] ?? "").trim()) e[k] = msg; };
-    if (s === 1) req("plan", "Please pick the plan you bought.");
-    if (s === 2) {
+    if (s === 1) {
+      req("plan", "Please pick the plan you bought.");
       req("bizName", "Please add your business name.");
       req("contact", "Please add your name.");
       if (!isEmail(d.email)) e.email = "Please add a valid email.";
       if (d.phone.replace(/\D/g, "").length < 7) e.phone = "Please add a valid phone number.";
       req("businessType", "Please pick your type of business.");
       if (d.businessType === "other") req("businessTypeOther", "Please tell us your type of business.");
-      req("goal", "Please pick your main goal.");
     }
-    if (s === 3) {
+    if (s === 2) {
       if (pageCount === 0) e.pages = "Please pick at least one page.";
       if (pageCount > allow) e.pages = `Your ${plan ? PLANS[plan].name : ""} plan includes ${allow} pages. Please remove ${pageCount - allow}.`;
     }
     if (s === 4) {
-      req("headline", "Please add a headline. A rough idea works.");
-      req("about", "Please tell us a little about your business.");
-      req("services", "Please list your services or products.");
-      req("priceDisplay", "Please pick one.");
-      bt?.fields.forEach((f) => {
-        if (f.optional) return;
-        const v = d.details[f.id];
-        if (!v || (Array.isArray(v) ? v.length === 0 : !String(v).trim())) e["d_" + f.id] = "Please answer this one.";
-      });
-    }
-    if (s === 5) {
       req("domainStatus", "Please pick one.");
-      if (d.domainStatus === "own") { req("domainName", "Please add your domain."); req("registrar", "Please pick one."); }
-      if (d.domainStatus === "need") { req("domainBuyer", "Please pick one."); req("domainWanted", "Please add the domain you’d like."); }
-    }
-    if (s === 6) {
-      req("style", "Please pick a style.");
-      req("logo", "Please pick one.");
-      if (d.logo === "need" || d.logo === "update") req("logoPaid", "Please pick one.");
+      if (d.domainStatus === "own") req("domainName", "Please add your domain.");
     }
     return e;
   }
@@ -188,9 +221,9 @@ export default function LeadForm() {
       return;
     }
     setErrors({});
-    if (step < 7) { const n = step + 1; setMaxStep((m) => Math.max(m, n)); go(n); return; }
+    if (step < TOTAL) { const n = step + 1; setMaxStep((m) => Math.max(m, n)); go(n); return; }
     // Final submit
-    for (let s = 1; s <= 6; s++) { if (Object.keys(validate(s)).length) { go(s); setErrors(validate(s)); return; } }
+    for (let s = 1; s <= TOTAL; s++) { if (Object.keys(validate(s)).length) { go(s); setErrors(validate(s)); return; } }
     setSending(true);
     setFormError("");
     try {
@@ -236,9 +269,9 @@ export default function LeadForm() {
     const msg = `Hi BizzOne, I just sent my project setup form for ${done.biz}.`;
     return (
       <div className="app">
-        <Side step={8} maxStep={8} go={() => {}} planName={plan ? PLANS[plan].name : "—"} fit="Form sent. Thank you!" />
+        <Side step={TOTAL + 1} maxStep={TOTAL + 1} go={() => {}} planName={plan ? PLANS[plan].name : "—"} fit="Form sent. Thank you!" />
         <div className="main">
-          <TopBar step={7} />
+          <TopBar step={TOTAL} />
           <section className="finish" aria-labelledby="doneTitle">
             <div className="big"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg></div>
             <h1 id="doneTitle">You’re all set.</h1>
@@ -269,19 +302,26 @@ export default function LeadForm() {
       <Side step={step} maxStep={maxStep} go={go} planName={plan ? PLANS[plan].name : "—"} fit={fitStatus} />
       <div className="main">
         <TopBar step={step} />
-        <form onSubmit={next} noValidate>
+        <form onSubmit={next} onKeyDown={onFormKeyDown} noValidate>
           <div className="wrap">
             <section aria-labelledby={`h-${step}`} key={step} data-step={step}>
               <div className="head">
-                <p className="kicker">Step {step} of 7 <span className="time">{time}</span></p>
+                <p className="kicker">Step {step} of {TOTAL} <span className="time">{time}</span></p>
                 <h1 id={`h-${step}`} ref={headRef} tabIndex={-1}>{heading}</h1>
                 <p className="lede">{lede}</p>
               </div>
 
-              {/* STEP 1: Plan */}
-              {step === 1 && (
+              {/* STEP 1: Plan (compact when it came from the link) */}
+              {step === 1 && plan && linkPlan === plan && !showPlans && (
+                <div className="rec-ok" style={{ marginBottom: 18 }}>
+                  <span className="ico">{ICONS.check}</span>
+                  <div style={{ flex: 1 }}><b>Your plan: {PLANS[plan].name}</b>{PLANS[plan].chips.join(" · ")}</div>
+                  <button type="button" className="edit" onClick={() => setShowPlans(true)}>Change</button>
+                </div>
+              )}
+              {step === 1 && !(plan && linkPlan === plan && !showPlans) && (
                 <fieldset className="card">
-                  <legend className="sr-only">Which plan did you purchase?</legend>
+                  <legend className="card-title">Which plan did you buy?</legend>
                   <div className="plans">
                     {PLAN_ORDER.map((k) => {
                       const p = PLANS[k];
@@ -315,7 +355,7 @@ export default function LeadForm() {
               )}
 
               {/* STEP 2: Business */}
-              {step === 2 && (
+              {step === 1 && (
                 <>
                   <div className="card">
                     <div className="grid">
@@ -350,7 +390,7 @@ export default function LeadForm() {
                     )}
                   </fieldset>
                   <fieldset className="card">
-                    <legend className="card-title">What’s the main goal for your website?</legend>
+                    <legend className="card-title">What’s the main goal for your website? <span className="opt">(optional)</span></legend>
                     <div className="tiles">
                       {GOALS.map(([g, ic]) => (
                         <label className="tile" key={g}>
@@ -367,7 +407,7 @@ export default function LeadForm() {
               )}
 
               {/* STEP 3: Pages & features */}
-              {step === 3 && (
+              {step === 2 && (
                 <>
                   <fieldset className="card">
                     <legend className="card-title">Pick your pages</legend>
@@ -436,11 +476,11 @@ export default function LeadForm() {
               )}
 
               {/* STEP 4: Words + business details */}
-              {step === 4 && (
+              {step === 3 && (
                 <>
                   <div className="card">
                     <p className="card-title">Your words</p>
-                    <p className="card-help">Write like you’re talking to a customer.</p>
+                    <p className="card-help">All optional. Write like you’re talking to a customer. A few words is enough.</p>
                     <div className="grid">
                       <TextField id="headline" full label="Homepage headline" value={d.headline} onChange={(v) => set("headline", v)} err={errors.headline} placeholder="For example: Your trusted local cleaning team" hint="The first line visitors see. A rough idea works." />
                       <TextArea id="about" label="About your business" value={d.about} onChange={(v) => set("about", v)} err={errors.about} placeholder="How you started, what makes you different, years in business" />
@@ -451,13 +491,13 @@ export default function LeadForm() {
                   {bt && bt.fields.length > 0 && (
                     <div className="card">
                       <p className="card-title">{ICONS[bt.icon]}About your {bt.id === "other" ? "business" : bt.label.toLowerCase()}</p>
-                      <p className="card-help">A few questions for your type of business.</p>
+                      <p className="card-help">Just tap what fits. Skip anything you’re not sure about.</p>
                       {bt.fields.map((f) => <DetailField key={f.id} f={f} value={d.details[f.id]} onChange={(v) => setDetail(f.id, v)} err={errors["d_" + f.id]} />)}
                     </div>
                   )}
 
                   <fieldset className="card">
-                    <legend className="card-title">Should your website show prices?</legend>
+                    <legend className="card-title">Should your website show prices? <span className="opt">(optional)</span></legend>
                     <div className="tiles one">
                       {[["full", "Show my full prices", "Customers see exact prices."], ["from", "Show “starting from” prices", "A guide price, final price on request."], ["quote", "No prices, ask for a quote", "Customers contact you for a price."]].map(([v, t, h]) => (
                         <label className="tile" key={v}>
@@ -488,7 +528,7 @@ export default function LeadForm() {
               )}
 
               {/* STEP 5: Domain */}
-              {step === 5 && (
+              {step === 4 && (
                 <>
                   <fieldset className="card">
                     <legend className="card-title">Do you already have a domain?</legend>
@@ -547,7 +587,7 @@ export default function LeadForm() {
               )}
 
               {/* STEP 6: Brand */}
-              {step === 6 && (
+              {step === 4 && (
                 <>
                   <fieldset className="card">
                     <legend className="card-title">Pick a style</legend>
@@ -597,23 +637,18 @@ export default function LeadForm() {
                 </>
               )}
 
-              {/* STEP 7: Review */}
-              {step === 7 && (
+              {/* STEP 4 (end): quick check before sending */}
+              {step === 4 && (
                 <>
+                  <p className="q-label" style={{ marginTop: 26 }}>Quick check before you send</p>
                   <div className="rv">
-                    <Rv ic="plan" t="Plan" s={1} go={go} body={plan ? `${PLANS[plan].name} ($${PLANS[plan].price})` : ""} />
-                    <Rv ic="biz" t="Business" s={2} go={go} body={[d.bizName, d.contact, d.email, d.phone, bt ? (bt.id === "other" ? d.businessTypeOther : bt.label) : ""].filter(Boolean).join(", ") + (d.goal ? `. Goal: ${d.goal.toLowerCase()}.` : "")} />
-                    <Rv ic="pages" t={`Pages (${pageCount} of ${allow})`} s={3} go={go} body={allPages.join(", ")} />
-                    <Rv ic="admin" t="Features" s={3} go={go} body={(d.features.length ? FEATURES.filter((f) => d.features.includes(f.id)).map((f) => f.title).join(", ") : "The essentials") + `; languages: ${d.languages.toLowerCase()}`} />
-                    <Rv ic="words" t="Your words" s={4} go={go} body={d.headline ? `Headline: “${d.headline}”` : ""} />
-                    {bt && <Rv ic={bt.icon} t={`${bt.id === "other" ? "Business" : bt.label} details`} s={4} go={go} body={bt.fields.map((f) => { const v = d.details[f.id]; const s = Array.isArray(v) ? v.join(", ") : v; return s ? `${f.label}: ${s}` : ""; }).filter(Boolean).join(" · ")} />}
-                    <Rv ic="globe" t="Domain" s={5} go={go} body={d.domainStatus === "own" ? `Owns ${d.domainName} (${d.registrar})` : d.domainStatus === "need" ? `Needs ${d.domainWanted || "a domain"}, ${({ paid: "already paid BizzOne", bizzone: "BizzOne buys it", client: "will buy it themselves" } as Record<string, string>)[d.domainBuyer] || ""}` : d.domainStatus === "unsure" ? "Not sure yet" : ""} />
-                    <Rv ic="brush" t="Brand" s={6} go={go} body={[d.style, ({ have: "has a logo", update: "logo needs a refresh", need: "needs a logo" } as Record<string, string>)[d.logo], d.colors ? `colours: ${d.colors}` : "colours: match my logo"].filter(Boolean).join(", ")} />
+                    <Rv ic="biz" t="Your business" s={1} go={go} body={[d.bizName, plan ? `${PLANS[plan].name} plan` : "", bt ? (bt.id === "other" ? d.businessTypeOther : bt.label) : "", d.phone, d.email].filter(Boolean).join(" · ")} />
+                    <Rv ic="pages" t={`Pages (${pageCount})`} s={2} go={go} body={allPages.join(", ")} />
+                    <Rv ic="words" t="Your words" s={3} go={go} body={d.headline ? `“${d.headline}”` : "Skipped. We’ll ask you on WhatsApp."} />
                   </div>
                   <div className="summary">
-                    <h3>Your timeline</h3>
+                    <h3>What happens next</h3>
                     <p>Your {plan ? PLANS[plan].name : ""} website goes live in <strong>{plan ? PLANS[plan].live : "a few days"}</strong> once we have your content and approvals.</p>
-                    <p>We hold your build slot for 15 days. If we’re still waiting on content or feedback after that, a $10 slot extension fee may apply.</p>
                     {domainFee || extras.length ? (
                       <>
                         <div className="total"><span>Extras your project manager will go over with you</span><span>{domainFee ? `$${domainFee}+` : "TBC"}</span></div>
@@ -634,7 +669,7 @@ export default function LeadForm() {
               <span className="saved">{ICONS.check}Progress saved on this device</span>
               <p className="form-error" role="alert">{formError}</p>
               <button type="submit" className="btn btn-primary" disabled={sending}>
-                {step === 7 ? (sending ? "Sending…" : "Send my details") : "Continue"}{ICONS.arrow}
+                {step === TOTAL ? (sending ? "Sending…" : "Send my details") : "Continue"}{ICONS.arrow}
               </button>
             </div>
           </div>
@@ -663,8 +698,8 @@ function Side({ step, maxStep, go, planName, fit }: { step: number; maxStep: num
         {STEPS.map((s, i) => {
           const n = i + 1;
           return (
-            <li key={n} className={n < step || step > 7 ? "done" : ""} aria-current={n === step ? "step" : undefined}>
-              <button type="button" disabled={n > maxStep || step > 7} onClick={() => go(n)}>
+            <li key={n} className={n < step || step > TOTAL ? "done" : ""} aria-current={n === step ? "step" : undefined}>
+              <button type="button" disabled={n > maxStep || step > TOTAL} onClick={() => go(n)}>
                 <span className="dot">{n}</span><span>{s[0]}<small>{s[1]}</small></span>
               </button>
             </li>
@@ -693,8 +728,8 @@ function TopBar({ step }: { step: number }) {
   return (
     <div className="topbar" aria-hidden="true">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <div className="row"><img src="/logo.jpg" alt="" /><b>BizzOne Digital</b><span className="stepx">Step {step} of 7</span></div>
-      <div className="track"><div className="fill" style={{ width: Math.round((step / 7) * 100) + "%" }} /></div>
+      <div className="row"><img src="/logo.jpg" alt="" /><b>BizzOne Digital</b><span className="stepx">Step {step} of {TOTAL}</span></div>
+      <div className="track"><div className="fill" style={{ width: Math.round((step / TOTAL) * 100) + "%" }} /></div>
     </div>
   );
 }

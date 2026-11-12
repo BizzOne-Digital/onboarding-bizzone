@@ -1,3 +1,12 @@
+/* Mobile keyboard mode (set by LeadForm while typing on a phone):
+   hide the sticky Back/Continue bar and let the top bar scroll away. */
+@media (max-width:980px){
+  .kb-open .actions{display:none;}
+  .kb-open .topbar{position:static;}
+  .kb-open .wrap{padding-bottom:40vh;}
+  input,select,textarea{font-size:16px;} /* stops iOS zooming in on focus */
+}
+
 /* Dashboard styles — reuses the form's theme tokens. */
 .btn:disabled{opacity:.5;cursor:default;}
 .btn-danger{background:var(--error);color:#fff;}
