@@ -10,6 +10,35 @@ const v = (x: unknown, max = 3000) => {
 const list = (x: unknown, max = 40) =>
   Array.isArray(x) ? x.filter((i) => typeof i === "string").map((i: string) => i.trim().slice(0, 80)).filter(Boolean).slice(0, max) : [];
 
+// GoHighLevel webhook → GHL workflow creates the ClickUp task.
+// Same field names as the old form so the existing workflow keeps working.
+// Never blocks the client: failures are logged, the submission is already saved.
+async function sendToGhl(doc: Record<string, unknown>) {
+  const url = process.env.GHL_WEBHOOK_URL;
+  if (!url) return;
+  const s = (x: unknown) => (Array.isArray(x) ? x.join(", ") || "—" : String(x ?? "—"));
+  const full = s(doc.name);
+  const [firstName, ...rest] = full.split(/\s+/);
+  const details = Object.entries((doc.type_details as Record<string, string>) || {}).map(([k, val]) => `${k}: ${val}`).join("\n");
+  const body = {
+    firstName, lastName: rest.join(" ") || "—", name: full,
+    email: s(doc.email), phone: s(doc.phone), companyName: s(doc.business),
+    source: "New Onboarding Form",
+    package_selected: s(doc.package), addons: s(doc.features),
+    website: s(doc.site), social: "—", industry: s(doc.business_type), goal: s(doc.goal),
+    audience: "—", logo: s(doc.logo), colors: s(doc.colors), style: s(doc.style),
+    inspiration: s(doc.inspo), pages: s(doc.pages), headline: s(doc.headline),
+    about: s(doc.about),
+    notes: [s(doc.notes), details && `Business details:\n${details}`, `Domain: ${s(doc.domain_status)} ${s(doc.domain_name) !== "—" ? s(doc.domain_name) : s(doc.domain_wanted)}`, `Languages: ${s(doc.languages)}`].filter(Boolean).join("\n\n"),
+  };
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) });
+    if (!r.ok) console.error("GHL webhook failed", r.status);
+  } catch (e) {
+    console.error("GHL webhook error", e);
+  }
+}
+
 export async function POST(req: Request) {
   let b: Record<string, unknown> = {};
   try { b = await req.json(); } catch { return NextResponse.json({ error: "Invalid request." }, { status: 400 }); }
@@ -91,6 +120,7 @@ export async function POST(req: Request) {
   try {
     const r = await (await submissions()).insertOne(doc);
     try { await (await formLogs()).insertOne({ ...logBase, status: "success", reason: "Submitted" }); } catch {}
+    await sendToGhl(doc);
     return NextResponse.json({ ok: true, id: r.insertedId.toString() });
   } catch (e) {
     console.error("lead insert failed", e);

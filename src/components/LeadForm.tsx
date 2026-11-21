@@ -92,6 +92,26 @@ export default function LeadForm() {
     try { localStorage.setItem(KEY, JSON.stringify({ d, step, maxStep })); } catch {}
   }, [d, step, maxStep, loaded, done]);
 
+  // Browser Back/Forward moves between steps (answers stay saved either way).
+  useEffect(() => {
+    if (!loaded) return;
+    try { history.replaceState({ bzStep: step }, ""); } catch {}
+    const onPop = (e: PopStateEvent) => {
+      const s = Number(e.state?.bzStep);
+      if (s >= 1 && s <= TOTAL) go(s, true);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+
+  function clearForm() {
+    if (!window.confirm("Clear all your answers and start again? This can’t be undone.")) return;
+    try { localStorage.removeItem(KEY); } catch {}
+    setD(linkPlan ? { ...EMPTY, plan: linkPlan } : EMPTY);
+    setErrors({}); setFormError(""); setMaxStep(1); go(1);
+  }
+
   // Mobile: while the keyboard is open, hide the sticky action bar and un-stick the top bar
   // so the field being typed in stays visible. Restored as soon as the keyboard closes.
   useEffect(() => {
@@ -202,7 +222,10 @@ export default function LeadForm() {
     return e;
   }
 
-  function go(n: number) {
+  function go(n: number, fromHistory = false) {
+    // Each step gets a browser-history entry, so the phone/browser Back button
+    // goes to the previous step instead of leaving the form.
+    if (!fromHistory && n !== step) { try { history.pushState({ bzStep: n }, ""); } catch {} }
     setStep(n);
     setFormError("");
     window.scrollTo({ top: 0 });
@@ -339,7 +362,7 @@ export default function LeadForm() {
                           }} />
                           <Mark />
                           <span className="tx">
-                            <span className="ptop"><span className="pname">{p.name}</span><span className="pprice">${p.price} one-time</span>{k === "premium" && <span className="badge">Most popular</span>}</span>
+                            <span className="ptop"><span className="pname">{p.name}</span>{k === "premium" && <span className="badge">Most popular</span>}</span>
                             <span className="pblurb">{p.blurb}</span>
                             <span className="chips">{p.chips.map((c) => <span className="chip" key={c}>{c}</span>)}</span>
                           </span>
@@ -564,7 +587,7 @@ export default function LeadForm() {
                       <fieldset>
                         <legend className="q-label">How should we get your domain?</legend>
                         <div className="tiles one">
-                          {[["paid", "I already paid BizzOne for my domain", "No domain fee. We’ll set it up for you."], ["bizzone", "Please buy it for me", `$${DOMAIN_PRICE}. We register it in your business name, so it’s always yours.`], ["client", "I’ll buy it myself", "We send a 2-minute guide, then connect it."]].map(([v, t, h]) => (
+                          {[["paid", "I already paid BizzOne for my domain", "No domain fee. We’ll set it up for you."], ["bizzone", "Please buy it for me", "We register it in your business name, so it’s always yours."], ["client", "I’ll buy it myself", "We send a 2-minute guide, then connect it."]].map(([v, t, h]) => (
                             <label className="tile" key={v}>
                               <input type="radio" name="domainBuyer" checked={d.domainBuyer === v} onChange={() => set("domainBuyer", v)} />
                               <span className="tx"><strong>{t}</strong><span>{h}</span></span>
@@ -575,7 +598,7 @@ export default function LeadForm() {
                         <Err k="domainBuyer" />
                       </fieldset>
                       {d.domainBuyer === "paid" && <div className="note">{ICONS.trust}<span><strong>Great, no domain fee.</strong> Your project manager will match it to your earlier payment.</span></div>}
-                      {d.domainBuyer === "bizzone" && <div className="note">{ICONS.info}<span><strong>Nothing is charged now.</strong> We’ll check your domain is available and message you about the ${DOMAIN_PRICE}.</span></div>}
+                      {d.domainBuyer === "bizzone" && <div className="note">{ICONS.info}<span><strong>Nothing is charged now.</strong> We’ll check your domain is available and message you about the cost.</span></div>}
                       <div className="grid q">
                         <TextField id="domainWanted" label="Domain you’d like" value={d.domainWanted} onChange={(v) => set("domainWanted", v)} err={errors.domainWanted} placeholder="yourbusiness.com" />
                         <TextField id="domainBackups" optional label="Backup choices" value={d.domainBackups} onChange={(v) => set("domainBackups", v)} placeholder="In case it’s taken" />
@@ -651,11 +674,11 @@ export default function LeadForm() {
                     <p>Your {plan ? PLANS[plan].name : ""} website goes live in <strong>{plan ? PLANS[plan].live : "a few days"}</strong> once we have your content and approvals.</p>
                     {domainFee || extras.length ? (
                       <>
-                        <div className="total"><span>Extras your project manager will go over with you</span><span>{domainFee ? `$${domainFee}+` : "TBC"}</span></div>
-                        {domainFee ? <p>Domain purchase and setup: ${domainFee}</p> : null}
+                        <div className="total"><span>Extras your project manager will go over with you</span></div>
+                        {domainFee ? <p>Domain purchase and setup</p> : null}
                         {extras.length ? <p>Features outside your plan: {extras.map((f) => f.title).join(", ")}</p> : null}
                       </>
-                    ) : <div className="total"><span>No extras</span><span>$0</span></div>}
+                    ) : <div className="total"><span>No extras</span></div>}
                   </div>
                   <div className="note">{ICONS.trust}<span><strong>Nothing is charged by sending this form.</strong> It just tells your project manager what you need, so they can go over it with you.</span></div>
                 </>
@@ -666,7 +689,7 @@ export default function LeadForm() {
           <div className="actions">
             <div className="actions-in">
               {step > 1 && <button type="button" className="btn btn-ghost" onClick={() => go(step - 1)}>Back</button>}
-              <span className="saved">{ICONS.check}Progress saved on this device</span>
+              <span className="saved">{ICONS.check}Progress saved on this device · <button type="button" className="clear-link" onClick={clearForm}>Clear form</button></span>
               <p className="form-error" role="alert">{formError}</p>
               <button type="submit" className="btn btn-primary" disabled={sending}>
                 {step === TOTAL ? (sending ? "Sending…" : "Send my details") : "Continue"}{ICONS.arrow}

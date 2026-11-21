@@ -22,7 +22,7 @@ export function packageBucket(label: string | undefined | null): string {
   return "Other";
 }
 
-export const TEAM = ["Zubair", "Shumaila", "Memoon Javed", "Atif"];
+export const TEAM = ["Zubair", "Shumaila", "Atif"];
 
 export type FieldDef = {
   id: string;
