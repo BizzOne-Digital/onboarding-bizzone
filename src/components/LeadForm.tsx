@@ -66,6 +66,7 @@ export default function LeadForm() {
   const [loaded, setLoaded] = useState(false);
   const [linkPlan, setLinkPlan] = useState("");
   const [showPlans, setShowPlans] = useState(false);
+  const [intro, setIntro] = useState(true); // mobile-only welcome screen (hidden on desktop by CSS)
   const headRef = useRef<HTMLHeadingElement>(null);
 
   // Restore draft from this device.
@@ -323,6 +324,7 @@ export default function LeadForm() {
   return (
     <div className="app">
       <Side step={step} maxStep={maxStep} go={go} planName={plan ? PLANS[plan].name : "—"} fit={fitStatus} />
+      {loaded && intro && <MobileIntro planName={plan ? PLANS[plan].name : ""} resume={maxStep > 1} onStart={() => { setIntro(false); window.scrollTo({ top: 0 }); }} />}
       <div className="main">
         <TopBar step={step} />
         <form onSubmit={next} onKeyDown={onFormKeyDown} noValidate>
@@ -412,6 +414,7 @@ export default function LeadForm() {
                       </div>
                     )}
                   </fieldset>
+                  <Fold title="Main goal" filled={d.goal}>
                   <fieldset className="card">
                     <legend className="card-title">What’s the main goal for your website? <span className="opt">(optional)</span></legend>
                     <div className="tiles">
@@ -426,6 +429,7 @@ export default function LeadForm() {
                     </div>
                     <Err k="goal" />
                   </fieldset>
+                  </Fold>
                 </>
               )}
 
@@ -465,6 +469,7 @@ export default function LeadForm() {
                       <div className="note">{ICONS.info}<span><strong>You’ve used all {allow} pages in {PLANS[plan].name}.</strong> Untick a page to swap it{plan !== "advanced" ? <>, or go back to step 1 to pick a bigger plan</> : null}.</span></div>
                     )}
                   </fieldset>
+                  <Fold title="Features" filled={d.features.length ? d.features.length + " picked" : ""}>
                   <fieldset className="card">
                     <legend className="card-title">Features</legend>
                     <p className="card-help">Tap the ones you want.</p>
@@ -487,6 +492,8 @@ export default function LeadForm() {
                       <div className="note">{ICONS.info}<span><strong>{extras.map((f) => f.title).join(", ")}</strong> {extras.length > 1 ? "aren’t" : "isn’t"} part of {PLANS[plan].name}. That’s okay. Your project manager will message you about it. Nothing is charged here.</span></div>
                     )}
                   </fieldset>
+                  </Fold>
+                  <Fold title="Languages" filled={d.languages}>
                   <div className="card">
                     <fieldset className="q">
                       <legend className="q-label">Languages</legend>
@@ -495,12 +502,14 @@ export default function LeadForm() {
                       </div>
                     </fieldset>
                   </div>
+                  </Fold>
                 </>
               )}
 
               {/* STEP 4: Words + business details */}
               {step === 3 && (
                 <>
+                  <Fold title="Headline, about & services" filled={d.headline || d.about || d.services ? "Added" : ""}>
                   <div className="card">
                     <p className="card-title">Your words</p>
                     <p className="card-help">All optional. Write like you’re talking to a customer. A few words is enough.</p>
@@ -510,15 +519,19 @@ export default function LeadForm() {
                       <TextArea id="services" label={d.businessType === "ecommerce" ? "Your products" : "Your services"} value={d.services} onChange={(v) => set("services", v)} err={errors.services} placeholder={d.businessType === "ecommerce" ? "Your main products or best sellers" : "List each service with a short description"} />
                     </div>
                   </div>
+                  </Fold>
 
                   {bt && bt.fields.length > 0 && (
+                    <Fold title={`About your ${bt.id === "other" ? "business" : bt.label.toLowerCase()}`} filled={Object.values(d.details).some((x) => (Array.isArray(x) ? x.length : x)) ? "Added" : ""}>
                     <div className="card">
                       <p className="card-title">{ICONS[bt.icon]}About your {bt.id === "other" ? "business" : bt.label.toLowerCase()}</p>
                       <p className="card-help">Just tap what fits. Skip anything you’re not sure about.</p>
                       {bt.fields.map((f) => <DetailField key={f.id} f={f} value={d.details[f.id]} onChange={(v) => setDetail(f.id, v)} err={errors["d_" + f.id]} />)}
                     </div>
+                    </Fold>
                   )}
 
+                  <Fold title="Show prices on your website?" filled={d.priceDisplay ? "Answered" : ""}>
                   <fieldset className="card">
                     <legend className="card-title">Should your website show prices? <span className="opt">(optional)</span></legend>
                     <div className="tiles one">
@@ -538,7 +551,9 @@ export default function LeadForm() {
                       </div>
                     )}
                   </fieldset>
+                  </Fold>
 
+                  <Fold title="Anything else?" filled={d.notes ? "Added" : ""}>
                   <div className="card">
                     <p className="card-title">Anything else?</p>
                     <div className="field">
@@ -547,6 +562,7 @@ export default function LeadForm() {
                     </div>
                     <div className="note">{ICONS.upload}<span>After you submit, your project manager will message you to collect your logo, photos and any files.</span></div>
                   </div>
+                  </Fold>
                 </>
               )}
 
@@ -612,6 +628,7 @@ export default function LeadForm() {
               {/* STEP 6: Brand */}
               {step === 4 && (
                 <>
+                  <Fold title="Style" filled={d.style}>
                   <fieldset className="card">
                     <legend className="card-title">Pick a style</legend>
                     <div className="tiles">
@@ -626,6 +643,8 @@ export default function LeadForm() {
                     </div>
                     <Err k="style" />
                   </fieldset>
+                  </Fold>
+                  <Fold title="Logo" filled={d.logo ? "Answered" : ""}>
                   <div className="card">
                     <fieldset>
                       <legend className="q-label">Do you have a logo?</legend>
@@ -650,6 +669,8 @@ export default function LeadForm() {
                     </fieldset>
                     <div className="field q"><label htmlFor="inspo">Websites you like <span className="opt">(optional)</span></label><input type="text" id="inspo" value={d.inspo} onChange={(e) => set("inspo", e.target.value)} placeholder="Paste a link or two" /></div>
                   </div>
+                  </Fold>
+                  <Fold title="Brand colours" filled={d.colors ? "Added" : ""}>
                   <div className="card">
                     <div className="field">
                       <label htmlFor="colors">Your brand colours <span className="opt">(optional)</span></label>
@@ -657,6 +678,7 @@ export default function LeadForm() {
                       <p className="hint">Not sure? Leave it empty and our designer will match your logo and style.</p>
                     </div>
                   </div>
+                  </Fold>
                 </>
               )}
 
@@ -703,6 +725,54 @@ export default function LeadForm() {
 }
 
 /* ---------------- Pieces ---------------- */
+
+// Phone only: optional sections fold into a tap-to-open row so the form looks short.
+// On desktop the button is hidden by CSS and the card always shows.
+function Fold({ title, filled, children }: { title: string; filled?: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={"fold" + (open ? " open" : "")}>
+      <button type="button" className="fold-btn" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="fold-t">{title}</span>
+        <span className={"fold-s" + (filled ? " ok" : "")}>{filled ? "✓ " + filled : "Optional"}</span>
+        <span className="fold-ch" aria-hidden="true">▾</span>
+      </button>
+      <div className="fold-body">{children}</div>
+    </div>
+  );
+}
+
+// Phone only: a welcome screen before step 1 so the client knows what this is.
+function MobileIntro({ planName, resume, onStart }: { planName: string; resume: boolean; onStart: () => void }) {
+  return (
+    <div className="m-intro" role="dialog" aria-labelledby="m-intro-h">
+      <div className="m-intro-in">
+        <div className="brand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.jpg" alt="" />
+          <div><b>BizzOne Digital</b><span>Website project setup</span></div>
+        </div>
+        <div className="paid">{ICONS.check}Payment confirmed</div>
+        <h1 id="m-intro-h">Let’s build your website.</h1>
+        <p className="m-intro-sub">
+          {planName ? <>Your <strong>{planName}</strong> plan is ready. </> : null}
+          Answer a few quick questions so we can start. About 5 minutes, short answers are perfect.
+        </p>
+        <ol className="m-intro-steps">
+          {STEPS.map((s, i) => (
+            <li key={i}><span className="dot">{i + 1}</span><span><b>{s[0]}</b><small>{s[1]}</small></span></li>
+          ))}
+        </ol>
+        <ul className="m-intro-points">
+          <li>{ICONS.check}Your answers save automatically</li>
+          <li>{ICONS.check}Not sure? Skip it, we’ll ask on WhatsApp</li>
+          <li>{ICONS.lock}Private, only used for your project</li>
+        </ul>
+        <button type="button" className="btn m-intro-go" onClick={onStart}>{resume ? "Continue where I left off" : "Let’s start"} →</button>
+      </div>
+    </div>
+  );
+}
 
 function Side({ step, maxStep, go, planName, fit }: { step: number; maxStep: number; go: (n: number) => void; planName: string; fit: string }) {
   return (
